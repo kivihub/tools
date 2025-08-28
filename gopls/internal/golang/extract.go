@@ -610,6 +610,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	}
 	tok, path, start, end, outer, node := p.tok, p.path, p.start, p.end, p.outer, p.node
 
+	// 非嵌套return语句：return语句的parentNode和选中区的第一个节点的parentNode相同。
 	// A return statement is non-nested if its parent node is equal to the parent node
 	// of the first node in the selection. These cases must be handled separately because
 	// non-nested return statements are guaranteed to execute.
@@ -687,7 +688,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// we must determine the signature of the extracted function. We will then replace
 	// the block with an assignment statement that calls the extracted function with
 	// the appropriate parameters and return values.
-	variables, err := collectFreeVars(info, file, start, end, path[0])
+	variables, err := collectFreeVars(info, file, start, end, path[0]) // 收集变量信息，含是否是free，详见 variable 属性
 	if err != nil {
 		return nil, nil, err
 	}
@@ -737,21 +738,22 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// Redefined:
 	//
 	// a, err := funcCall()
-	// b, err := funcCall()
+	// b, err := funcCall() // 语法正确：短变量声明
 	//
 	// We track the number of free variables that can be redefined to maintain our preference
 	// of using "x, y, z := fn()" style assignment statements.
 	var canRedefineCount int
 
-	qual := typesinternal.FileQualifier(file, pkg)
+	qual := typesinternal.FileQualifier(file, pkg) // qual用于获取import的包的别名
 
+	// 遍历变量，判断是否是函数入参、返回值、局部变量
 	// Each identifier in the selected block must become (1) a parameter to the
 	// extracted function, (2) a return value of the extracted function, or (3) a local
 	// variable in the extracted function. Determine the outcome(s) for each variable
 	// based on whether it is free, altered within the selected block, and used outside
 	// of the selected block.
 	for _, v := range variables {
-		if _, ok := seenVars[v.obj]; ok {
+		if _, ok := seenVars[v.obj]; ok { // 避免变量被重复处理
 			continue
 		}
 		if v.obj.Name() == "_" {
@@ -761,6 +763,11 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		typ := typesinternal.TypeExpr(v.obj.Type(), qual)
 		seenVars[v.obj] = typ
 		identifier := ast.NewIdent(v.obj.Name())
+
+		// 返回值变量需要满足3个条件：
+		// 1) 必须在选中块内被定义或重新赋值
+		// 2) 必须在选中块外被使用
+		// 3) 选中块外的第一次使用必须不是重新赋值或重新定义
 		// An identifier must meet three conditions to become a return value of the
 		// extracted function. (1) its value must be defined or reassigned within
 		// the selection (isAssigned), (2) it must be used at least once after the
@@ -790,6 +797,9 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 				}
 			}
 		}
+		// 入参变量需要满足2个条件：
+		// 1) 必须是free变量
+		// 2) 选中块内的第一次使用必须不是定义
 		// An identifier must meet two conditions to become a parameter of the
 		// extracted function. (1) it must be free (isFree), and (2) its first
 		// use within the selection cannot be its own definition (isDefined).
@@ -826,8 +836,8 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// within the selection. We still need the enclosing function declaration because this is
 	// the top-level declaration. We inspect the top-level declaration to look for variables
 	// as well as for code replacement.
-	enclosing := outer.Type
-	for _, p := range path {
+	enclosing := outer.Type  // enclosing表示选中块所在的函数字面量（函数也可能是匿名函数）
+	for _, p := range path { // 遍历选中块所在的AstNode，及其祖先Node
 		if p == enclosing {
 			break
 		}
@@ -837,6 +847,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		}
 	}
 
+	// 把选中的块放至新构造的文件中，便于后续的遍历和编辑
 	// We put the selection in a constructed file. We can then traverse and edit
 	// the extracted selection without modifying the original AST.
 	startOffset, endOffset, err := safetoken.Offsets(tok, start, end)
@@ -850,6 +861,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		return nil, nil, err
 	}
 
+	// 选择块存在return语句时：参照enclosing函数的返回值类型设定抽取方法的返回值类型；至于是否添加bool类型的返回值，取决于选择块是否存在非嵌套的return语句；
 	// We need to account for return statements in the selected block, as they will complicate
 	// the logical flow of the extracted function. See the following example, where ** denotes
 	// the range to be extracted.
@@ -921,10 +933,10 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	//     }
 	//     return b
 	// }
-
 	var retVars []*returnVariable
 	var ifReturn *ast.IfStmt
 
+	// 处理自由分支语句，例如：continue label 或 continue 语句所在的for循环语句，label和for在选中块外的情况
 	// Determine if the extracted block contains any free branch statements, for
 	// example: "continue label" where "label" is declared outside of the
 	// extracted block, or continue inside a "for" statement where the for
@@ -935,6 +947,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	freeBranches := freeBranches(info, curSel, start, end)
 
 	// All return statements in the extracted block are error handling returns, and there are no free control statements.
+	// return都是错误处理return，且没有自由分支语句。表示不用增加变量用于控制流程，可简化为判断err来控制流程
 	isErrHandlingReturnsCase := allReturnsFinalErr && len(freeBranches) == 0
 
 	if hasReturn {
@@ -943,6 +956,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 			// signature of the extracted function as described above. Adjust all of
 			// the return statements in the extracted function to reflect this change in
 			// signature.
+			// 修改extractedFunction的返回值：增加extractedBlock所在函数的zeroValue和按需增加shouldReturn
 			if err := adjustReturnStatements(returnTypes, seenVars, extractedBlock, qual, isErrHandlingReturnsCase); err != nil {
 				return nil, nil, err
 			}
@@ -994,6 +1008,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// }
 	//
 
+	// 存在freeBranch时，使用ctrl变量来控制流程
 	// Generate an unused identifier for the control value.
 	ctrlVar, _ := freshName(info, file, start, "ctrl", 0)
 	if len(freeBranches) > 0 {
@@ -1002,8 +1017,10 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 			Kind:  token.INT,
 			Value: "0",
 		}
+		// extracted block中的free branch statements
 		var branchStmts []*ast.BranchStmt
 		var stack []ast.Node
+		// extracted block中每个return语句增加ctrl变量的0值
 		// Add the zero "ctrl" value to each return statement in the extracted block.
 		ast.Inspect(extractedBlock, func(n ast.Node) bool {
 			if n != nil {
@@ -1029,6 +1046,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 			return true
 		})
 
+		// 为extracted block中的free branch statement构建return statement，以此来替代
 		// Construct a return statement to replace each free branch statement in the extracted block. It should have
 		// zero values for all return parameters except one, "ctrl", which dictates which continuation to follow.
 		var freeCtrlStmtReturns []ast.Expr
@@ -1049,6 +1067,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		}
 		freeCtrlStmtReturns = append(freeCtrlStmtReturns, getZeroVals(retVars)...)
 
+		// extracted block中的free branch statement替换为return statement
 		for i, branchStmt := range branchStmts {
 			replaceBranchStmtWithReturnStmt(extractedBlock, branchStmt, &ast.ReturnStmt{
 				Return: branchStmt.Pos(),
@@ -1066,6 +1085,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		})
 	}
 
+	// extracted block抽取的子方法，在符合条件时，在函数末尾增加return statement
 	// Add a return statement to the end of the new function. This return statement must include
 	// the values for the types of the original extracted function signature and (if a return
 	// statement is present in the selection) enclosing function signature.
@@ -1078,6 +1098,8 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		})
 	}
 
+	// 构造extracted function的合适的调用语句
+	// :=符号使用条件：1）赋值左侧的至少有一个未初始化的变量；2）所有已初始化的变化需要允许被redefined
 	// Construct the appropriate call to the extracted function.
 	// We must meet two conditions to use ":=" instead of '='. (1) there must be at least
 	// one variable on the lhs that is uninitialized (non-free) prior to the assignment.
@@ -1098,6 +1120,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	extractedFunCall := generateFuncCall(hasNonNestedReturn, hasReturnValues, params,
 		append(returns, getNames(retVars)...), funName, sym, receiverName)
 
+	// 定义调用extracted function前需要声明的变量（例外：如果return的变量都uninitialized，那么可以使用:=符号替代）
 	// Create variable declarations for any identifiers that need to be initialized prior to
 	// calling the extracted function. We do not manually initialize variables if every return
 	// value is uninitialized. We can use := to initialize the variables in this situation.
@@ -1127,6 +1150,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		}
 	}
 
+	// 构建extracted function。函数声明和body分开构建以使注释在正确的位置。
 	// Build the extracted function. We format the function declaration and body
 	// separately, so that comments are printed relative to the extracted
 	// BlockStmt.
@@ -1186,23 +1210,27 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	newLineIndent := "\n" + indent
 
 	var fullReplacement strings.Builder
+	// 写入extracted block前的内容
 	fullReplacement.Write(before)
+	// commentBuf未赋值，本条语句不执行
 	if commentBuf.Len() > 0 {
 		comments := strings.ReplaceAll(commentBuf.String(), "\n", newLineIndent)
 		fullReplacement.WriteString(comments)
 	}
+	// 写入需要声明的变量
 	if declBuf.Len() > 0 { // add any initializations, if needed
 		initializations := strings.ReplaceAll(declBuf.String(), "\n", newLineIndent) +
 			newLineIndent
 		fullReplacement.WriteString(initializations)
 	}
+	// 写入extracted function call语句
 	fullReplacement.Write(replaceBuf.Bytes()) // call the extracted function
 	if ifBuf.Len() > 0 {                      // add the if statement below the function call, if needed
 		ifstatement := newLineIndent +
 			strings.ReplaceAll(ifBuf.String(), "\n", newLineIndent)
 		fullReplacement.WriteString(ifstatement)
 	}
-
+	// 存在freeBranches时，写入if语句
 	// Add the switch statement for free branch statements after the new function call.
 	if len(freeBranches) > 0 {
 		fmt.Fprintf(&fullReplacement, "%[1]sswitch %[2]s {%[1]s", newLineIndent, ctrlVar)
@@ -1217,9 +1245,10 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		}
 		fullReplacement.WriteString("}")
 	}
-
+	// 写入extracted block后的内容
 	fullReplacement.Write(after)
-	fullReplacement.WriteString("\n\n")       // add newlines after the enclosing function
+	fullReplacement.WriteString("\n\n") // add newlines after the enclosing function
+	// 写入extracted function
 	fullReplacement.Write(newFuncBuf.Bytes()) // insert the extracted function
 
 	return fset, &analysis.SuggestedFix{
@@ -1365,6 +1394,7 @@ type variable struct {
 	defined bool
 }
 
+// 收集变量信息（Free变量是指定义在函数内，且选择区域外，的变量。Free变量作为抽取方法的入参）
 // collectFreeVars maps each identifier in the given range to whether it is "free."
 // Given a range, a variable in that range is defined as "free" if it is declared
 // outside of the range and neither at the file scope nor package scope. These free
@@ -1414,6 +1444,7 @@ func collectFreeVars(info *types.Info, file *ast.File, start, end token.Pos, nod
 	// return value acts as an indicator for where it was defined.
 	var sel func(n *ast.SelectorExpr) (types.Object, bool)
 	sel = func(n *ast.SelectorExpr) (types.Object, bool) {
+		// Unparen用来剔除圆括号
 		switch x := ast.Unparen(n.X).(type) {
 		case *ast.SelectorExpr:
 			return sel(x)
@@ -1521,12 +1552,13 @@ func collectFreeVars(info *types.Info, file *ast.File, start, end token.Pos, nod
 			}
 			return false
 		case *ast.DeclStmt:
+			// GenDel是通用声明：包含导入声明、常量声明、类型声明、变量声明（组）
 			gen, ok := n.Decl.(*ast.GenDecl)
 			if !ok {
 				return false
 			}
 			for _, spec := range gen.Specs {
-				vSpecs, ok := spec.(*ast.ValueSpec)
+				vSpecs, ok := spec.(*ast.ValueSpec) // ValueSpec：常量声明、变量声明
 				if !ok {
 					continue
 				}
@@ -1542,7 +1574,7 @@ func collectFreeVars(info *types.Info, file *ast.File, start, end token.Pos, nod
 				}
 			}
 			return false
-		case *ast.IncDecStmt:
+		case *ast.IncDecStmt: // 自增/自减赋值
 			if ident, ok := n.X.(*ast.Ident); !ok {
 				return false
 			} else if obj, _ := id(ident); obj == nil {
@@ -1591,7 +1623,7 @@ func referencesObj(info *types.Info, expr ast.Expr, obj types.Object) bool {
 type fnExtractParams struct {
 	tok        *token.File
 	start, end token.Pos
-	path       []ast.Node
+	path       []ast.Node // 选中块所在的AstNode，及其祖先Node
 	outer      *ast.FuncDecl
 	node       ast.Node
 }
@@ -1889,6 +1921,7 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 	// extracted function. We set the bool to 'true' because, if these return statements
 	// execute, the extracted function terminates early, and the enclosing function must
 	// return as well.
+	// 非错误处理return语句，需要在return语句后添加一个bool值，用于控制流程。即增加shouldReturn的bool返回值
 	if !isErrHandlingReturnsCase {
 		zeroVals = append(zeroVals, ast.NewIdent("true"))
 	}

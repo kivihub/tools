@@ -331,6 +331,10 @@ func boolCompare(x, y bool) int {
 // name (which may be a type name, for example).
 //
 // See the simple heuristics documented in line.
+// 获取类型的首字母缩写作为变量名
+// 例如："MyType" -> "mt"
+// 例如："myTYpE" -> "mte"
+// 例如："MyType123" -> "mt123"
 func AbbreviateVarName(s string) string {
 	var (
 		b            strings.Builder
