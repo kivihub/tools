@@ -1180,6 +1180,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 			}},
 		}
 	}
+	// 写入函数声明
 	if err := format.Node(&newFuncBuf, fset, newFunc); err != nil {
 		return nil, nil, err
 	}
@@ -1191,6 +1192,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		Node:     extractedBlock,
 		Comments: extractedComments,
 	}
+	// 写入函数体
 	if err := format.Node(&newFuncBuf, fset, commentedNode); err != nil {
 		return nil, nil, err
 	}
@@ -1921,10 +1923,6 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 	// extracted function. We set the bool to 'true' because, if these return statements
 	// execute, the extracted function terminates early, and the enclosing function must
 	// return as well.
-	// 非错误处理return语句，需要在return语句后添加一个bool值，用于控制流程。即增加shouldReturn的bool返回值
-	if !isErrHandlingReturnsCase {
-		zeroVals = append(zeroVals, ast.NewIdent("true"))
-	}
 	ast.Inspect(extractedBlock, func(n ast.Node) bool {
 		if n == nil {
 			return false
@@ -1935,6 +1933,10 @@ func adjustReturnStatements(returnTypes []*ast.Field, seenVars map[types.Object]
 		}
 		if n, ok := n.(*ast.ReturnStmt); ok {
 			n.Results = slices.Concat(zeroVals, n.Results)
+			// 非错误处理return语句，需要在return语句后添加一个bool值，用于控制流程。即增加shouldReturn的bool返回值
+			if !isErrHandlingReturnsCase {
+				n.Results = append(n.Results, ast.NewIdent("true"))
+			}
 			return false
 		}
 		return true
