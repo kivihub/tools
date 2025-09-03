@@ -631,6 +631,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	// If all return statements in the extracted block have a non-nil error, we
 	// can replace the "shouldReturn" check with an error check to produce a
 	// more concise output.
+	// 所有return语句的末尾是‘err’expression
 	allReturnsFinalErr := true // all ReturnStmts have final 'err' expression
 	hasReturn := false         // selection contains a ReturnStmt
 	filter := []ast.Node{(*ast.ReturnStmt)(nil), (*ast.FuncLit)(nil)}
@@ -1163,7 +1164,8 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	newFunc := &ast.FuncDecl{
 		Name: ast.NewIdent(funName),
 		Type: &ast.FuncType{
-			Params:  &ast.FieldList{List: paramTypes},
+			Params: &ast.FieldList{List: paramTypes},
+			// Results组成：returnTypes:{free var} - retVars:{enclosing function return var - should ret var - ctrl var}
 			Results: &ast.FieldList{List: append(returnTypes, getDecls(retVars)...)},
 		},
 		// Body handled separately -- see above.
@@ -1514,6 +1516,17 @@ func collectFreeVars(info *types.Info, file *ast.File, start, end token.Pos, nod
 		switch n := n.(type) {
 		case *ast.AssignStmt:
 			for _, assignment := range n.Lhs {
+				// support selector expr
+				// s.varA = 1
+				// s.son.VarB = 2
+				for {
+					if lhs, ok := assignment.(*ast.SelectorExpr); ok {
+						assignment = lhs.X
+					} else {
+						break
+					}
+				}
+
 				lhs, ok := assignment.(*ast.Ident)
 				if !ok {
 					continue
