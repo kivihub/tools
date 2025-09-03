@@ -1600,6 +1600,29 @@ func collectFreeVars(info *types.Info, file *ast.File, start, end token.Pos, nod
 				}
 				seen[obj].assigned = true
 			}
+		case *ast.ExprStmt:
+			if call, ok := n.X.(*ast.CallExpr); ok {
+				// 收集函数调用表达式中的所有标识符
+				var idents []*ast.Ident
+				ast.Inspect(call, func(n ast.Node) bool {
+					if ident, ok := n.(*ast.Ident); ok {
+						idents = append(idents, ident)
+					}
+					return true
+				})
+
+				// 处理收集到的标识符
+				for _, ident := range idents {
+					obj, _ := id(ident)
+					if obj == nil {
+						continue
+					}
+					if _, ok := seen[obj]; !ok {
+						continue
+					}
+					seen[obj].assigned = true
+				}
+			}
 		}
 		return true
 	})
