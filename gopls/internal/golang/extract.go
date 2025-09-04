@@ -1685,10 +1685,11 @@ func canExtractFunction(tok *token.File, start, end token.Pos, src []byte, curFi
 	}
 	// Node that encloses the selection must be a statement.
 	// TODO: Support function extraction for an expression.
-	_, ok := path[0].(ast.Stmt)
-	if !ok {
-		return nil, false, false, fmt.Errorf("node is not a statement")
-	}
+	// TODO：不限制只能提取语句块，但需要验证是否有副作用
+	//_, ok := path[0].(ast.Stmt)
+	//if !ok {
+	//	return nil, false, false, fmt.Errorf("node is not a statement")
+	//}
 
 	// Find the function declaration that encloses the selection.
 	var outer *ast.FuncDecl
