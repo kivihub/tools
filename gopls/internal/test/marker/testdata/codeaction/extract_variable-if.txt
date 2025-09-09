@@ -12,6 +12,11 @@ using a 'const' declaration, which is not legal at that location.
 -- flags --
 -ignore_extra_diags
 
+-- go.mod --
+module mod.test/extract/a
+
+go 1.18
+
 -- a.go --
 package a
 

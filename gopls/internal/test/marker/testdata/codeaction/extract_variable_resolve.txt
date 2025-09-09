@@ -4,6 +4,11 @@ See extract_variable.txt for the same test without resolve support.
 -- flags --
 -ignore_extra_diags
 
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
 -- basic_lit.go --
 package extract
 

@@ -1,6 +1,11 @@
 This test checks that function extraction moves comments along with the
 extracted code.
 
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
 -- main.go --
 package main
 

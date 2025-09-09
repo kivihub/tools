@@ -15,6 +15,11 @@ See extract_variable_all.txt for the same test without resolve support.
 -- flags --
 -ignore_extra_diags
 
+-- go.mod --
+module mod.test/extract_all
+
+go 1.18
+
 -- basic_lit.go --
 package extract_all
 

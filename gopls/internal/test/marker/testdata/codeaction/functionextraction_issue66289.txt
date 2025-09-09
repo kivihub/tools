@@ -1,3 +1,7 @@
+-- go.mod --
+module mod.test/extract
+
+go 1.18
 
 -- a.go --
 package a

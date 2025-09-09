@@ -4,6 +4,11 @@ inserts new statement before the scope of its free symbols.
 -- flags --
 -ignore_extra_diags
 
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
 -- inside_else.go --
 package extract
 

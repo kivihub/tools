@@ -3,6 +3,11 @@ This test exercises function and method extraction.
 -- flags --
 -ignore_extra_diags
 
+-- go.mod --
+module golang.org/lsptests/extract_method
+
+go 1.18
+
 -- basic.go --
 package extract
 

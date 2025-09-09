@@ -1,6 +1,11 @@
 This test checks the behavior of the 'extract variable/constant' code action
 at top level (outside any function). See issue #70665.
 
+-- go.mod --
+module mod.test/extract/a
+
+go 1.18
+
 -- a.go --
 package a
 
