@@ -1,0 +1,57 @@
+This test checks that the extract method refactoring works correctly when the extracted method assigns to a field.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
+-- basic.go --
+package extract
+
+import "fmt"
+
+func _() {
+    ms := MyStruct{sub: &SubStruct{}}
+
+    ms.sub.sVar = 1 //@codeaction("ms", "refactor.extract.function", end=closeBracket, result=outer)
+    ms.iVar = 1
+    ms.fVar = 1.0 //@loc(closeBracket, re`ms.fVar.*`)
+
+    fmt.Printf("%v", ms)
+}
+
+-- @outer/basic.go --
+package extract
+
+import "fmt"
+
+func _() {
+    ms := MyStruct{sub: &SubStruct{}}
+
+    ms = newFunction(ms) //@loc(closeBracket, re`ms.fVar.*`)
+
+    fmt.Printf("%v", ms)
+}
+
+func newFunction(ms MyStruct) MyStruct {
+	ms.sub.sVar = 1 //@codeaction("ms", "refactor.extract.function", end=closeBracket, result=outer)
+	ms.iVar = 1
+	ms.fVar = 1.0
+	return ms
+}
+
+-- model.go --
+package extract
+
+type MyStruct struct {
+    iVar    int
+    fVar    float32
+    subVar *SubStruct
+}
+
+type SubStruct struct {
+    sVar int
+}
