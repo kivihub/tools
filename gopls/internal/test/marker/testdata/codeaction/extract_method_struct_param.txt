@@ -1,0 +1,61 @@
+This test extract method with struct param.
+
+-- flags --
+-ignore_extra_diags
+
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
+-- basic.go --
+package extract
+
+import "fmt"
+
+func _() {
+    ms := MyStruct{sub: &SubStruct{}}
+
+    Assign(&ms) //@codeaction("Assign", "refactor.extract.function", end=closeBracket, result=outer)
+    fmt.Printf("%v", ms)//@loc(closeBracket, re`fmt.P.*`)
+
+    fmt.Printf("%v", ms)
+}
+
+-- @outer/basic.go --
+package extract
+
+import "fmt"
+
+func _() {
+    ms := MyStruct{sub: &SubStruct{}}
+
+    ms = newFunction(ms)//@loc(closeBracket, re`fmt.P.*`)
+
+    fmt.Printf("%v", ms)
+}
+
+func newFunction(ms MyStruct) MyStruct {
+	Assign(&ms) //@codeaction("Assign", "refactor.extract.function", end=closeBracket, result=outer)
+	fmt.Printf("%v", ms)
+	return ms
+}
+
+-- util.go --
+package extract
+
+type MyStruct struct {
+    iVar    int
+    fVar    float32
+    subVar *SubStruct
+}
+
+type SubStruct struct {
+    sVar int
+}
+
+func Assign(m *MyStruct) {
+    m.subVar.sVar = 1
+    m.iVar = 1
+    m.fVar = 1.0
+}
