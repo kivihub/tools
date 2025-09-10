@@ -20,19 +20,19 @@ func parseSpan(input string) span {
 	uri := protocol.URIFromPath
 
 	// :0:0#0-0:0#0
-	valid := input
+	valid := input // 10:20-40:50
 	var hold, offset int
 	hadCol := false
-	suf := rstripSuffix(input)
+	suf := rstripSuffix(input) // suffix{remains: "10:20-40", sep: ":", num: 50}
 	if suf.sep == "#" {
 		offset = suf.num
 		suf = rstripSuffix(suf.remains)
 	}
 	if suf.sep == ":" {
-		valid = suf.remains
-		hold = suf.num
+		valid = suf.remains // 10:20-40
+		hold = suf.num      // 50
 		hadCol = true
-		suf = rstripSuffix(suf.remains)
+		suf = rstripSuffix(suf.remains) // suffix{remains: "10:20", sep: "-", num: 40}
 	}
 	switch {
 	case suf.sep == ":":
@@ -48,9 +48,9 @@ func parseSpan(input string) span {
 	// if have not yet seen a : then we might have either a line or a column depending
 	// on whether start has a column or not
 	// we build an end point and will fix it later if needed
-	end := newPoint(suf.num, hold, offset)
+	end := newPoint(suf.num, hold, offset) // point:{40, 50, 0}
 	hold, offset = 0, 0
-	suf = rstripSuffix(suf.remains)
+	suf = rstripSuffix(suf.remains) // suffix{remains: "10", sep: ":", num: 20}
 	if suf.sep == "#" {
 		offset = suf.num
 		suf = rstripSuffix(suf.remains)
@@ -59,9 +59,9 @@ func parseSpan(input string) span {
 		// turns out we don't have a span after all, rewind
 		return newSpan(uri(valid), end, point{})
 	}
-	valid = suf.remains
-	hold = suf.num
-	suf = rstripSuffix(suf.remains)
+	valid = suf.remains             // 10
+	hold = suf.num                  // 20
+	suf = rstripSuffix(suf.remains) // suffix{remains: "", sep: ":", num: 10}
 	if suf.sep != ":" {
 		// line#offset only
 		return newSpan(uri(valid), newPoint(hold, 0, offset), end)
@@ -70,7 +70,7 @@ func parseSpan(input string) span {
 	if !hadCol {
 		end = newPoint(suf.num, end.v.Line, end.v.Offset)
 	}
-	return newSpan(uri(suf.remains), newPoint(suf.num, hold, offset), end)
+	return newSpan(uri(suf.remains), newPoint(suf.num, hold, offset), end) // point:{10, 20, 0} {40, 50, 0}
 }
 
 type suffix struct {
@@ -79,6 +79,14 @@ type suffix struct {
 	num     int
 }
 
+// rstripSuffix returns the suffix of the input string that is not a number.
+// The suffix is the part of the string that is not a number.
+// The number is the number at the end of the string.
+// If the string does not end with a number, the number is -1.
+// input: 1:2-5:6 output: suffix{remains: "1:2-5", sep: ":", num: 6}
+// input: 1:2-5   output: suffix{remains: "1:2", sep: "-", num: 5}
+// input: #1-#2   output: suffix{remains: "#1-", sep: "#", num: 2}
+// input: #1-     output: suffix{remains: "#1", sep: "-", num: -1}
 func rstripSuffix(input string) suffix {
 	if len(input) == 0 {
 		return suffix{"", "", -1}
