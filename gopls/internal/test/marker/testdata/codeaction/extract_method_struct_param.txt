@@ -8,7 +8,7 @@ module mod.test/extract
 
 go 1.18
 
--- basic.go --
+-- a.go --
 package extract
 
 import "fmt"
@@ -16,13 +16,13 @@ import "fmt"
 func _() {
     ms := MyStruct{sub: &SubStruct{}}
 
-    Assign(&ms) //@codeaction("Assign", "refactor.extract.function", end=closeBracket, result=outer)
-    fmt.Printf("%v", ms)//@loc(closeBracket, re`fmt.P.*`)
+    Assign(&ms) //@codeaction("Assign", "refactor.extract.function", end=closeBracket_a, result=outer_a)
+    fmt.Printf("%v", ms)//@loc(closeBracket_a, re`fmt.P.*`)
 
     fmt.Printf("%v", ms)
 }
 
--- @outer/basic.go --
+-- @outer_a/a.go --
 package extract
 
 import "fmt"
@@ -30,15 +30,47 @@ import "fmt"
 func _() {
     ms := MyStruct{sub: &SubStruct{}}
 
-    ms = newFunction(ms)//@loc(closeBracket, re`fmt.P.*`)
+    ms = newFunction(ms)//@loc(closeBracket_a, re`fmt.P.*`)
 
     fmt.Printf("%v", ms)
 }
 
 func newFunction(ms MyStruct) MyStruct {
-	Assign(&ms) //@codeaction("Assign", "refactor.extract.function", end=closeBracket, result=outer)
+	Assign(&ms) //@codeaction("Assign", "refactor.extract.function", end=closeBracket_a, result=outer_a)
 	fmt.Printf("%v", ms)
 	return ms
+}
+
+-- b.go --
+package extract
+
+import "fmt"
+
+func _() {
+    ms := &MyStruct{sub: &SubStruct{}}
+
+    Assign(ms) //@codeaction("Assign", "refactor.extract.function", end=closeBracket_b, result=outer_b)
+    fmt.Printf("%v", ms)//@loc(closeBracket_b, re`fmt.P.*`)
+
+    fmt.Printf("%v", ms)
+}
+
+-- @outer_b/b.go --
+package extract
+
+import "fmt"
+
+func _() {
+    ms := &MyStruct{sub: &SubStruct{}}
+
+    newFunction(ms)//@loc(closeBracket_b, re`fmt.P.*`)
+
+    fmt.Printf("%v", ms)
+}
+
+func newFunction(ms *MyStruct) {
+	Assign(ms) //@codeaction("Assign", "refactor.extract.function", end=closeBracket_b, result=outer_b)
+	fmt.Printf("%v", ms)
 }
 
 -- util.go --

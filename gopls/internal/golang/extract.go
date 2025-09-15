@@ -773,7 +773,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		// extracted function. (1) its value must be defined or reassigned within
 		// the selection (isAssigned), (2) it must be used at least once after the
 		// selection (isUsed), and (3) its first use after the selection
-		// cannot be its own reassignment or redefinition (objOverriden).
+		// cannot be its own reassignment or redefinition (objOverridden).
 		vscope := v.obj.Parent()
 		if vscope == nil {
 			return nil, nil, fmt.Errorf("parent nil")
@@ -1602,11 +1602,16 @@ func collectFreeVars(info *types.Info, file *ast.File, start, end token.Pos, nod
 			}
 		case *ast.ExprStmt:
 			if call, ok := n.X.(*ast.CallExpr); ok {
-				// 收集函数调用表达式中的所有标识符
+				// 收集函数调用表达式中的指针标识符
+				// 格式为：&var
 				var idents []*ast.Ident
 				ast.Inspect(call, func(n ast.Node) bool {
-					if ident, ok := n.(*ast.Ident); ok {
-						idents = append(idents, ident)
+					if unary, ok := n.(*ast.UnaryExpr); ok {
+						if unary.Op == token.AND {
+							if ident, ok := unary.X.(*ast.Ident); ok {
+								idents = append(idents, ident)
+							}
+						}
 					}
 					return true
 				})
