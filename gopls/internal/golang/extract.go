@@ -966,7 +966,16 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 		// statements in the selection. Update the type signature of the extracted
 		// function and construct the if statement that will be inserted in the enclosing
 		// function.
-		retVars, ifReturn, err = generateReturnInfo(enclosing, pkg, path, file, info, start, end, hasNonNestedReturn, isErrHandlingReturnsCase)
+		returnsVarNames := make(map[string]bool)
+		for _, expr := range returns {
+			ident := expr.(*ast.Ident)
+			returnsVarNames[ident.Name] = true
+		}
+		hasCollisionWithReturnVar := func(name string) bool {
+			_, exist := returnsVarNames[name]
+			return exist
+		}
+		retVars, ifReturn, err = generateReturnInfo(enclosing, pkg, path, file, info, start, end, hasNonNestedReturn, isErrHandlingReturnsCase, hasCollisionWithReturnVar)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1118,8 +1127,7 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	} else {
 		funName, _ = freshName(info, file, start, "newFunction", 0)
 	}
-	extractedFunCall := generateFuncCall(hasNonNestedReturn, hasReturnValues, params,
-		append(returns, getNames(retVars)...), funName, sym, receiverName)
+	extractedFunCall := generateFuncCall(hasNonNestedReturn, hasReturnValues, params, append(returns, getNames(retVars)...), funName, sym, receiverName)
 
 	// 定义调用extracted function前需要声明的变量（例外：如果return的变量都uninitialized，那么可以使用:=符号替代）
 	// Create variable declarations for any identifiers that need to be initialized prior to
@@ -1223,15 +1231,13 @@ func extractFunctionMethod(cpkg *cache.Package, pgf *parsego.File, start, end to
 	}
 	// 写入需要声明的变量
 	if declBuf.Len() > 0 { // add any initializations, if needed
-		initializations := strings.ReplaceAll(declBuf.String(), "\n", newLineIndent) +
-			newLineIndent
+		initializations := strings.ReplaceAll(declBuf.String(), "\n", newLineIndent) + newLineIndent
 		fullReplacement.WriteString(initializations)
 	}
 	// 写入extracted function call语句
 	fullReplacement.Write(replaceBuf.Bytes()) // call the extracted function
 	if ifBuf.Len() > 0 {                      // add the if statement below the function call, if needed
-		ifstatement := newLineIndent +
-			strings.ReplaceAll(ifBuf.String(), "\n", newLineIndent)
+		ifstatement := newLineIndent + strings.ReplaceAll(ifBuf.String(), "\n", newLineIndent)
 		fullReplacement.WriteString(ifstatement)
 	}
 	// 存在freeBranches时，写入if语句
@@ -1840,7 +1846,7 @@ func parseStmts(fset *token.FileSet, src []byte) (*ast.BlockStmt, []*ast.Comment
 // signature of the extracted function. We prepare names, signatures, and "zero values" that
 // represent the new variables. We also use this information to construct the if statement that
 // is inserted below the call to the extracted function.
-func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.Node, file *ast.File, info *types.Info, start, end token.Pos, hasNonNestedReturns bool, isErrHandlingReturnsCase bool) ([]*returnVariable, *ast.IfStmt, error) {
+func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.Node, file *ast.File, info *types.Info, start, end token.Pos, hasNonNestedReturns bool, isErrHandlingReturnsCase bool, hasCollisionWithReturnVar func(string) bool) ([]*returnVariable, *ast.IfStmt, error) {
 	var retVars []*returnVariable
 	var cond *ast.Ident
 	// Generate information for the values in the return signature of the enclosing function.
@@ -1867,8 +1873,17 @@ func generateReturnInfo(enclosing *ast.FuncType, pkg *types.Package, path []ast.
 				} else if n, ok := varNameForType(typ); ok {
 					bestName = n
 				}
-				retName, idx := freshNameOutsideRange(info, file, path[0].Pos(), start, end, bestName, nameIdx[bestName])
-				nameIdx[bestName] = idx
+
+				var retName string
+				for {
+					var idx int
+					retName, idx = freshNameOutsideRange(info, file, path[0].Pos(), start, end, bestName, nameIdx[bestName])
+					nameIdx[bestName] = idx // 存储下一个同名变量的索引
+					if !hasCollisionWithReturnVar(retName) {
+						break
+					}
+				}
+
 				z, isValid := typesinternal.ZeroExpr(typ, qual)
 				if !isValid {
 					return nil, nil, fmt.Errorf("can't generate zero value for %T", typ)

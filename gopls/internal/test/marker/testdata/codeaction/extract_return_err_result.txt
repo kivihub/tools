@@ -1,0 +1,75 @@
+This test verifies various behaviors of function extraction when every return statement in the extracted block is an error handling return.
+
+-- go.mod --
+module mod.test/extract
+
+go 1.18
+
+-- a.go --
+package err_handling
+
+import "encoding/json"
+
+func FuncReturnError() error {
+	_, err := json.Marshal(0) //@codeaction("_", "refactor.extract.function", end=end, result=a)
+	if err != nil {
+		return err
+	} //@loc(end, "}")
+	return err
+}
+
+-- @a/a.go --
+package err_handling
+
+import "encoding/json"
+
+func FuncReturnError() error {
+	err, err1 := newFunction()
+	if err1 != nil {
+		return err1
+	} //@loc(end, "}")
+	return err
+}
+
+func newFunction() (error, error) {
+	_, err := json.Marshal(0) //@codeaction("_", "refactor.extract.function", end=end, result=a)
+	if err != nil {
+		return nil, err
+	}
+	return err, nil
+}
+
+-- b.go --
+package err_handling
+
+import "encoding/json"
+
+func FuncReturnNil() error {
+	_, err := json.Marshal(0) //@codeaction("_", "refactor.extract.function", end=end2, result=b)
+	if err != nil {
+		return err
+	} //@loc(end2, "}")
+	return nil
+}
+
+-- @b/b.go --
+package err_handling
+
+import "encoding/json"
+
+func FuncReturnNil() error {
+	err := newFunction()
+	if err != nil {
+		return err
+	} //@loc(end2, "}")
+	return nil
+}
+
+func newFunction() error {
+	_, err := json.Marshal(0) //@codeaction("_", "refactor.extract.function", end=end2, result=b)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
